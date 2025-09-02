@@ -1467,6 +1467,7 @@ class BannerModel(BaseModel):
     content: str
     dismissible: bool
     timestamp: int
+    translations: Optional[dict] = None  # Maps language codes to content translations
 
 
 try:
