@@ -17,12 +17,14 @@
 		updateRAGConfig
 	} from '$lib/apis/retrieval';
 
-	import { reindexKnowledgeFiles } from '$lib/apis/knowledge';
-	import { deleteAllFiles } from '$lib/apis/files';
+	import { countKnowledges } from '$lib/apis/knowledge';
+	import { deleteAllFiles, countFiles } from '$lib/apis/files';
+	import { checkIfReindexing, listenToReindexProgress, reindexData } from '$lib/apis/utils';
 
 	import ResetUploadDirConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ResetVectorDBConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ReindexKnowledgeFilesConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import ReindexFilesConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -36,7 +38,13 @@
 
 	let showResetConfirm = false;
 	let showResetUploadDirConfirm = false;
-	let showReindexConfirm = false;
+	let showFilesReindexConfirm = false;
+	let filesCountMessage = '';
+	let memories = { progress: 0, status: 'idle' };
+	let files = { progress: 0, status: 'idle' };
+	let knowledge = { progress: 0, status: 'idle' };
+	let isReindexing = false;
+	let showReindexBar = false;
 
 	let embeddingEngine = '';
 	let embeddingModel = '';
@@ -234,6 +242,65 @@
 			AzureOpenAIVersion = embeddingConfig.azure_openai_config.version;
 		}
 	};
+
+	const openReindexDialog = async () => {
+		const token = localStorage.token;
+		if (!token) {
+			toast.error($i18n.t('No token found'));
+			return;
+		}
+
+		filesCountMessage = $i18n.t('Counting files to reindex..');
+		showFilesReindexConfirm = true;
+		// Fetch the file count
+		try {
+			const fileCount = await countFiles(token);
+			const knowledgeCount = await countKnowledges(token);
+
+			filesCountMessage = $i18n.t(
+				'You are about to reindex all memories, all {{files}} files and {{knowledges}} Knowledges. This could take a while. Do you want to proceed?',
+				{
+					files: fileCount,
+					knowledges: knowledgeCount
+				}
+			);
+		} catch (error) {
+			filesCountMessage = $i18n.t('Error fetching file/knowledge count');
+			toast.error(`${error}`);
+		}
+	};
+
+	const handleReindexProgress = (data: {
+		memories: { progress: number; status: string };
+		files: { progress: number; status: string };
+		knowledge: { progress: number; status: string };
+	}) => {
+		memories = data.memories;
+		files = data.files;
+		knowledge = data.knowledge;
+
+		isReindexing = memories.status === 'running' || files.status === 'running' || knowledge.status === 'running';
+	};
+
+	const startReindexing = async () => {
+		showReindexBar = true;
+		isReindexing = true;
+
+		// setTimeout(() => {
+		// 	listenToReindexProgress(handleReindexProgress);
+		// }, 2000);
+
+		const res_files = await reindexData(localStorage.token).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		listenToReindexProgress(handleReindexProgress, () => {
+			toast.success($i18n.t('Reindexing complete'));
+			isReindexing = false;
+		});
+	};
+
 	onMount(async () => {
 		await setEmbeddingConfig();
 
@@ -252,6 +319,12 @@
 		);
 
 		RAGConfig = config;
+
+		isReindexing = await checkIfReindexing();
+		if (isReindexing) {
+			showReindexBar = true;
+			listenToReindexProgress(handleReindexProgress);
+		}
 	});
 </script>
 
@@ -283,18 +356,10 @@
 	}}
 />
 
-<ReindexKnowledgeFilesConfirmDialog
-	bind:show={showReindexConfirm}
-	on:confirm={async () => {
-		const res = await reindexKnowledgeFiles(localStorage.token).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			toast.success($i18n.t('Success'));
-		}
-	}}
+<ReindexFilesConfirmDialog
+	bind:show={showFilesReindexConfirm}
+	message={filesCountMessage}
+	on:confirm={startReindexing}
 />
 
 <form
@@ -1318,19 +1383,54 @@
 					</div>
 					<div class="  mb-2.5 flex w-full justify-between">
 						<div class=" self-center text-xs font-medium">
-							{$i18n.t('Reindex Knowledge Base Vectors')}
+							{$i18n.t('Reindex all Vectors')}
 						</div>
 						<div class="flex items-center relative">
 							<button
 								class="text-xs"
 								on:click={() => {
-									showReindexConfirm = true;
+									openReindexDialog();
 								}}
+								disabled={isReindexing}
 							>
 								{$i18n.t('Reindex')}
 							</button>
 						</div>
 					</div>
+					{#if showReindexBar}
+						<div class="w-full bg-gray-200 rounded-full h-3 mt-4 flex overflow-hidden">
+							<!-- Memories -->
+							<div
+							class={`h-3 transition-all duration-300 rounded-l-full ${
+								memories.status === "done" ? "bg-green-600" : "bg-blue-600"
+							}`}
+							style="width: {33 * (memories.progress / 100)}%"
+							></div>
+
+							<!-- Files -->
+							<div
+							class={`h-3 transition-all duration-300 ${
+								files.status === "done" ? "bg-green-600" : "bg-blue-600"
+							}`}
+							style="width: {33 * (files.progress / 100)}%"
+							></div>
+
+							<!-- Knowledge -->
+							<div
+							class={`h-3 transition-all duration-300 rounded-r-full ${
+								knowledge.status === "done" ? "bg-green-600" : "bg-blue-600"
+							}`}
+							style="width: {34 * (knowledge.progress / 100)}%"
+							></div>
+						</div>
+
+						<p class="text-sm mt-2 text-gray-600">
+							{$i18n.t("Reindexing")}:
+							{$i18n.t("Memory")}: {memories.status === 'done' ? $i18n.t("Done") : `${memories.progress}%`}, 
+							{$i18n.t("Files")}: {files.status === 'done' ? $i18n.t("Done") : `${files.progress}%`}, 
+							{$i18n.t("Knowledge")}: {knowledge.status === 'done' ? $i18n.t("Done") : `${knowledge.progress}%`}.
+						</p>
+					{/if}
 				</div>
 			</div>
 		</div>
