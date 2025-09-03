@@ -513,7 +513,7 @@
 
 {#if !$mobile && !$showSidebar}
 	<div
-		class=" py-2 px-1.5 flex flex-col justify-between text-black dark:text-white h-full border-e border-gray-50 dark:border-gray-850 z-10"
+		class=" py-2 px-1.5 flex flex-col justify-between text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-950 h-full border-e border-gray-50 dark:border-gray-850 z-10 transition-all"
 		id="sidebar"
 	>
 		<button
@@ -847,6 +847,7 @@
 					<Folder
 						className="px-2 mt-0.5"
 						name={$i18n.t('Channels')}
+						chevron={false}
 						dragAndDrop={false}
 						onAdd={async () => {
 							if ($user?.role === 'admin') {
@@ -873,6 +874,7 @@
 				<Folder
 					className="px-2 mt-0.5"
 					name={$i18n.t('Chats')}
+					chevron={false}
 					onAdd={() => {
 						showCreateFolderModal = true;
 					}}

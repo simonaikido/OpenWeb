@@ -885,7 +885,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             extra_params=extra_params,
         )
     except Exception as e:
-        raise Exception(f"Error: {e}")
+        raise Exception(f"{e}")
 
     features = form_data.pop("features", None)
     if features:
@@ -1297,7 +1297,13 @@ async def process_chat_response(
                     response_data = response
 
                 if "error" in response_data:
-                    error = response_data["error"].get("detail", response_data["error"])
+                    error = response_data.get("error")
+
+                    if isinstance(error, dict):
+                        error = error.get("detail", error)
+                    else:
+                        error = str(error)
+
                     Chats.upsert_message_to_chat_by_id_and_message_id(
                         metadata["chat_id"],
                         metadata["message_id"],
@@ -1310,7 +1316,7 @@ async def process_chat_response(
                             {
                                 "type": "chat:message:error",
                                 "data": {"error": {"content": error}},
-                            },
+                            }
                         )
 
                 if "selected_model_id" in response_data:
@@ -1495,7 +1501,7 @@ async def process_chat_response(
                                         tool_result_files = result.get("files", None)
                                         break
 
-                                if tool_result:
+                                if tool_result is not None:
                                     tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="true" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments))}" result="{html.escape(json.dumps(tool_result, ensure_ascii=False))}" files="{html.escape(json.dumps(tool_result_files)) if tool_result_files else ""}">\n<summary>Tool Executed</summary>\n</details>\n'
                                 else:
                                     tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="false" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments))}">\n<summary>Executing...</summary>\n</details>\n'
@@ -1610,7 +1616,7 @@ async def process_chat_response(
                                 {
                                     "role": "tool",
                                     "tool_call_id": result["tool_call_id"],
-                                    "content": result["content"],
+                                    "content": result.get("content", "") or "",
                                 }
                             )
                         temp_blocks = []
@@ -1958,6 +1964,10 @@ async def process_chat_response(
                                                 }
                                             )
                                         usage = data.get("usage", {})
+                                        usage.update(
+                                            data.get("timing", {})
+                                        )  # llama.cpp
+
                                         if usage:
                                             await event_emitter(
                                                 {
@@ -2331,7 +2341,7 @@ async def process_chat_response(
                         results.append(
                             {
                                 "tool_call_id": tool_call_id,
-                                "content": tool_result,
+                                "content": tool_result or "",
                                 **(
                                     {"files": tool_result_files}
                                     if tool_result_files
@@ -2618,7 +2628,7 @@ async def process_chat_response(
                 await background_tasks_handler()
             except asyncio.CancelledError:
                 log.warning("Task was cancelled!")
-                await event_emitter({"type": "task-cancelled"})
+                await event_emitter({"type": "chat:tasks:cancel"})
 
                 if not ENABLE_REALTIME_CHAT_SAVE:
                     # Save message in the database
