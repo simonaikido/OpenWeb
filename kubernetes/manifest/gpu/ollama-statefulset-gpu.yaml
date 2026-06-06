@@ -10,6 +10,8 @@ spec:
   serviceName: "ollama"
   template:
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
       - name: ollama
         resources:
