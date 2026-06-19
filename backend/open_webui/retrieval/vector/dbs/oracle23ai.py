@@ -30,6 +30,7 @@ from typing import Optional, List, Dict, Any, Union
 from decimal import Decimal
 import logging
 import os
+import re
 import threading
 import time
 import json
@@ -803,6 +804,8 @@ class Oracle23aiClient(VectorDBBase):
 
             if filter:
                 for i, (key, value) in enumerate(filter.items()):
+                    if not re.match(r'^[a-zA-Z0-9_]+$', str(key)):
+                        raise ValueError("Invalid input")
                     param_name = f"value_{i}"
                     query += f" AND JSON_VALUE(vmetadata, '$.{key}' RETURNING VARCHAR2(4096)) = :{param_name}"
                     params[param_name] = str(value)
